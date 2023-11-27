@@ -30,7 +30,7 @@ exports.handler = async (event) => {
         const timestamp = new Date().getTime();
         const date = new Date(timestamp);
         const time = date.toString();
-        const filename = `${user_name}_${user_id}_${time}_${unique_id}_${submissionUrl.split("/").pop()}`;
+        const filename = `${user_name}_${user_id}/${assign_id}/${time}_${unique_id}_${submissionUrl.split("/").pop()}`;
  
         // Store in Google Cloud Storage
         const storage = new Storage({ credentials: gcpServiceAccountKey });
@@ -56,6 +56,3 @@ exports.handler = async (event) => {
         return { statusCode: 500, body: JSON.stringify('Error processing your request') };
     }
 };
-
-
-}
