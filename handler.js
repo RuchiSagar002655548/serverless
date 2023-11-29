@@ -9,8 +9,12 @@ const sns = new AWS.SNS();
 const dynamoDB = new AWS.DynamoDB.DocumentClient();
 const ses = new AWS.SES({ region: process.env.REGION });
  
+ 
 exports.handler = async (event) => {
     const gcpServiceAccountKey = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+// Store in Google Cloud Storage
+    const storage = new Storage({ credentials: gcpServiceAccountKey });
+    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
    
     // Parse SNS message
     const message = JSON.parse(event.Records[0].Sns.Message);
@@ -35,7 +39,7 @@ exports.handler = async (event) => {
     }
  
     try {
-        // Attempt to download the file from GitHub
+        // Download the file from GitHub
         const response = await axios.get(submissionUrl);
         const fileContent = response.data;
  
@@ -45,24 +49,23 @@ exports.handler = async (event) => {
         const date = new Date(timestamp);
         const time = date.toString();
         const filename = `${user_name}_${user_id}/${assign_id}/${time}_${unique_id}_${submissionUrl.split("/").pop()}`;
- 
-        // Store in Google Cloud Storage
-        const storage = new Storage({ credentials: gcpServiceAccountKey });
-        const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
         await bucket.file(filename).save(fileContent);
  
+        // Generate Signed URL
+        const url = await storage.bucket(bucketName).file(fileName);
+ 
         // Email user about the successful download
-        await sendEmail(email, 'Download Successful', 'Your file has been downloaded and stored successfully here is the link' - filename, process.env.MAILGUN_API_KEY, process.env.MAILGUN_DOMAIN);
+        await sendEmail(email, 'Download Successful', `Your file has been downloaded and stored successfully. Here is the link: ${url}`, process.env.MAILGUN_API_KEY, process.env.MAILGUN_DOMAIN);
  
         // Log success in DynamoDB
         await logStatusToDynamoDB(unique_id, email, submissionUrl, 'Download Successful', dynamoDB, process.env.DYNAMODB_TABLE);
  
         return { statusCode: 200, body: JSON.stringify('Process completed successfully') };
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error:', error.message);
  
         // Email user about the failure
-        await sendEmail(email, 'Download Failed', 'There was an error downloading your file.', process.env.MAILGUN_API_KEY, process.env.MAILGUN_DOMAIN);
+        await sendEmail(email, 'Download Failed', 'There was an error downloading your file.' + error.message, process.env.MAILGUN_API_KEY, process.env.MAILGUN_DOMAIN);
  
         // Log failure in DynamoDB
         await logStatusToDynamoDB(uuidv4(), email, submissionUrl, 'Download Failed', dynamoDB, process.env.DYNAMODB_TABLE);
@@ -70,6 +73,7 @@ exports.handler = async (event) => {
         return { statusCode: 500, body: JSON.stringify('Error processing your request') };
     }
 };
+ 
  
 async function sendEmail(to, subject, text, apiKey, domain) {
     const mailgunUrl = `https://api.mailgun.net/v3/${domain}/messages`;
